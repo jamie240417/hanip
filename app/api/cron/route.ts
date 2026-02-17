@@ -1,3 +1,5 @@
+export const revalidate = 0
+
 import { NextRequest, NextResponse } from 'next/server'
 import Parser from 'rss-parser'
 import { GoogleGenerativeAI } from '@google/generative-ai'
@@ -258,6 +260,40 @@ async function fetchNewsFromRSS(): Promise<NewsArticle[]> {
   return allArticles.slice(0, 50)
 }
 
+// 링크 기준 중복 제거 (제네릭 적용)
+function removeDuplicateByLink<T extends NewsArticle>(articles: T[]): T[] {
+  const seenLinks = new Set<string>()
+  
+  return articles.filter(article => {
+    if (seenLinks.has(article.link)) {
+      return false
+    }
+    seenLinks.add(article.link)
+    return true
+  })
+}
+
+// 제목 기준 중복 제거 (제네릭 적용)
+function removeDuplicateByTitle<T extends NewsArticle>(articles: T[]): T[] {
+  const seenTitles = new Set<string>()
+
+  return articles.filter(article => {
+    const normalizedTitle = article.title
+      .replace(/\s+/g, '')
+      .substring(0, 20)
+
+    if (seenTitles.has(normalizedTitle)) {
+      return false
+    }
+
+    seenTitles.add(normalizedTitle)
+    return true
+  })
+}
+
+
+
+
 // 필터링: 제외 키워드 및 포함 키워드 체크
 function filterArticles(articles: NewsArticle[]): NewsArticle[] {
   const filtered = articles.filter(article => {
@@ -387,11 +423,23 @@ function scoreArticles(articles: NewsArticle[]): ScoredArticle[] {
 }
 
 // Top 7 선정
-function selectTopArticles(scoredArticles: ScoredArticle[], limit: number = 7): ScoredArticle[] {
-  return scoredArticles
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
+function selectTopArticles(
+  scoredArticles: ScoredArticle[],
+  limit: number = 7
+): ScoredArticle[] {
+
+  const sorted = [...scoredArticles].sort((a, b) => b.score - a.score)
+
+  const noDuplicateLink = removeDuplicateByLink(sorted)
+
+  const noDuplicateTitle = removeDuplicateByTitle(noDuplicateLink)
+
+  return noDuplicateTitle.slice(0, limit)
 }
+
+
+
+
 
 // Gemini로 뉴스 요약
 async function summarizeNews(article: ScoredArticle): Promise<{
